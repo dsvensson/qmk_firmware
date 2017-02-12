@@ -37,10 +37,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define SE_PIPE RALT(SE_LTGT)
 #define SE_BSLS RALT(SE_PLUS)
 
+#define MAC_LCBR RALT(LSFT(KC_8))
+#define MAC_PIPE RALT(KC_7)
+#define MAC_RCBR RALT(LSFT(KC_9))
+#define MAC_LBRC RALT(KC_8)
+#define MAC_BSLS RALT(LSFT(KC_7))
+#define MAC_RBRC RALT(KC_9)
+
 #define KM_BLOWRAK 0
 #define KM_QWERTY  1
-#define KM_MEDIA   2
-#define KM_HAXHAX  3
+#define KM_MACOS   2
+#define KM_MEDIA   3
+#define KM_HAXHAX  4
+#define KM_MAC_HAXHAX  5
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 	/* Layer 0: Blowrak ISO layer, a Swedish take on Dvorak */
@@ -59,6 +68,14 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 		KC_LCTRL,KC_A,   KC_S,   KC_D,   KC_F,   KC_G,   KC_H,   KC_J,   KC_K,   KC_L,   SE_OE,  SE_AE,          KC_ENT,                             \
 		KC_LSFT, SE_LTGT,KC_Z,   KC_X,   KC_C,   KC_V,   KC_B,   KC_N,   KC_M,   KC_COMM,KC_DOT, SE_MINS,        KC_RSFT,           KC_UP,           \
 		KC_FN0,  KC_LGUI,KC_LALT,                       KC_SPC,                          KC_RALT,KC_RGUI,KC_MENU,KC_FN1,    KC_LEFT,KC_DOWN,KC_RGHT),
+	/* Layer 3: macOS LALT/LGUI mess */
+	[KM_MACOS] = KEYMAP( \
+		_______,        _______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   _______,_______,_______, \
+		_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   _______,_______,_______, \
+		_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   _______,_______,_______, \
+		_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,        _______, \
+		_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,        _______,           _______,         \
+		_______,KC_LALT,KC_LGUI,                        _______,                        _______,_______,_______,_______,   _______,_______,_______),
 	/* Layer 2: Media layer */
 	[KM_MEDIA] = KEYMAP( \
 		_______,        _______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   KC_WAKE,KC_PWR, KC_SLEP, \
@@ -66,7 +83,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 		_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   KC_MUTE,_______,KC_VOLD, \
 		_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,        _______,                            \
 		_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,        _______,           KC_MPLY,         \
-		_______,_______,_______,                        _______,                        _______,_______,RESET  ,_______,   KC_MPRV,KC_MSTP,KC_MNXT),
+		_______,KC_FN2 ,_______,                        _______,                        _______,_______,RESET  ,_______,   KC_MPRV,KC_MSTP,KC_MNXT),
 	/* Layer 3: Programming layer */
 	[KM_HAXHAX] = KEYMAP( \
 		_______,        _______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   _______,_______,_______, \
@@ -75,11 +92,21 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 		_______,SE_LBRC,SE_BSLS,SE_RBRC,_______,_______,_______,_______,_______,_______,_______,_______,        _______,                            \
 		_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,        _______,           _______,         \
 		_______,_______,_______,                        _______,                        _______,_______,_______,_______,   _______,_______,_______),
+	/* Layer 3: macOS Programming layer */
+	[KM_MAC_HAXHAX] = KEYMAP( \
+		_______,         _______ ,_______ ,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   _______,_______,_______, \
+		_______,_______ ,_______ ,_______ ,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   _______,_______,_______, \
+		_______,MAC_LCBR,MAC_PIPE,MAC_RCBR,_______,_______,_______,_______,_______,_______,_______,_______,_______,_______,   _______,_______,_______, \
+		_______,MAC_LBRC,MAC_BSLS,MAC_RBRC,_______,_______,_______,_______,_______,_______,_______,_______,        _______,                            \
+		_______,_______ ,_______ ,_______ ,_______,_______,_______,_______,_______,_______,_______,_______,        _______,           _______,         \
+		_______,_______ ,_______ ,                         _______,                        _______,_______,_______,_______,   _______,_______,_______),
 };
+
 
 const uint16_t PROGMEM fn_actions[] = {
 	[0] = ACTION_LAYER_MOMENTARY(KM_MEDIA),
-	[1] = ACTION_LAYER_TOGGLE(KM_QWERTY)
+	[1] = ACTION_LAYER_TOGGLE(KM_QWERTY),
+	[2] = ACTION_LAYER_TOGGLE(KM_MACOS)
 };
 
 void matrix_scan_user(void)
@@ -97,16 +124,27 @@ void matrix_scan_user(void)
 	}
 }
 
-/* Mixes in KM_HAXHAX via RALT modifier without shadowing the RALT key combinations. */
+/* Mixes in KM_HAXHAX/KM_MAC_HAXHAX via RALT modifier without shadowing the RALT key combinations. */
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 	uint8_t modifiers = get_mods();
 	if (modifiers & MOD_BIT(KC_RALT) && record->event.pressed) {
-		uint16_t kc = keymap_key_to_keycode(KM_HAXHAX, record->event.key);
-		if (kc != KC_TRNS) {
-			register_code(kc);
-			unregister_code(kc);
-			return false;
+		uint8_t layer = biton32(layer_state);
+		uint16_t kc = keymap_key_to_keycode(layer == KM_MACOS ? KM_MAC_HAXHAX : KM_HAXHAX, record->event.key);
+		if (kc == KC_TRNS) {
+			return true;
 		}
+
+		/* For some reason, register_code(RALT(LSFT(..))) doesn't work on macOS */
+		if ((kc & QK_LSFT))
+			register_code (KC_LSFT);
+
+		register_code(kc & ~QK_LSFT);
+		unregister_code(kc & ~QK_LSFT);
+
+		if ((kc & QK_LSFT))
+			unregister_code(KC_LSFT);
+
+		return false;
 	}
 	return true;
 }
