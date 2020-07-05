@@ -1,21 +1,46 @@
 #include QMK_KEYBOARD_H
 #include <ch.h>
 #include <hal.h>
+#include <string.h>
 #include "eeconfig.h"
 #include "serial_link/system/serial_link.h"
 #ifdef VISUALIZER_ENABLE
 #include "lcd_backlight.h"
 #endif
 
-#ifdef WPM_ENABLE
-#   include "serial_link/protocol/transport.h"
-#   include "wpm.h"
+#if (defined(LED_MATRIX_ENABLE) || defined(WPM_ENABLE))
+#    include "serial_link/protocol/transport.h"
 
+#ifdef LED_MATRIX_ENABLE
+#    include "led_matrix.h"
+MASTER_TO_ALL_SLAVES_OBJECT(led_matrix, led_eeconfig_t);
+MASTER_TO_ALL_SLAVES_OBJECT(led_suspend_state, bool);
+static led_eeconfig_t last_sent_led_matrix;
+static uint16_t led_matrix_sent_timer = 0;
+
+void send_led_suspend_state(void) {
+    if (is_serial_link_master()) {
+        *begin_write_led_suspend_state() = led_matrix_get_suspend_state();
+        end_write_led_suspend_state();
+    }
+}
+#endif
+
+#ifdef WPM_ENABLE
+#    include "wpm.h"
 MASTER_TO_ALL_SLAVES_OBJECT(current_wpm, uint8_t);
-static remote_object_t* remote_objects[] = {
-    REMOTE_OBJECT(current_wpm),
-};
 static uint8_t last_sent_wpm = 0;
+#endif
+
+static remote_object_t* remote_objects[] = {
+#ifdef LED_MATRIX_ENABLE
+    REMOTE_OBJECT(led_matrix),
+    REMOTE_OBJECT(led_suspend_state),
+#endif
+#ifdef WPM_ENABLE
+    REMOTE_OBJECT(current_wpm),
+#endif
+};
 #endif
 
 void init_serial_link_hal(void) {
@@ -124,12 +149,24 @@ void matrix_init_kb(void) {
     // put your keyboard start-up code here
     // runs once when the firmware starts up
 
+#ifdef LED_MATRIX_ENABLE
+    /*
+     * Since K20x is stuck with a 32 byte EEPROM (see tmk_core/common/chibios/eeprom_teensy.c),
+     * and neither led_matrix_eeconfig.speed or .flags fit in this boundary, just force their values to default on boot.
+     */
+#if !defined(LED_MATRIX_STARTUP_SPD)
+#    define LED_MATRIX_STARTUP_SPD UINT8_MAX / 2
+#endif
+    led_matrix_set_speed(LED_MATRIX_STARTUP_SPD),
+    led_matrix_set_flags(LED_FLAG_ALL);
+#endif
+
     matrix_init_user();
     // The backlight always has to be initialized, otherwise it will stay lit
 #ifndef VISUALIZER_ENABLE
     lcd_backlight_hal_init();
 #endif
-#ifdef WPM_ENABLE
+#if (defined(LED_MATRIX_ENABLE) || defined(WPM_ENABLE))
     add_remote_objects(remote_objects, sizeof(remote_objects) / sizeof(remote_object_t*));
 #endif
 }
@@ -137,6 +174,30 @@ void matrix_init_kb(void) {
 void matrix_scan_kb(void) {
     // put your looping keyboard code here
     // runs every cycle (a lot)
+
+#ifdef LED_MATRIX_ENABLE
+    if (is_serial_link_master()) {
+        if (!led_matrix_get_suspend_state()) {
+            if (timer_elapsed(led_matrix_sent_timer) >= 5000 || memcmp((void *)&last_sent_led_matrix, (void *)&led_matrix_eeconfig, sizeof(last_sent_led_matrix))) {
+                led_matrix_sent_timer = timer_read();
+                memcpy((void *)&last_sent_led_matrix, (void *)&led_matrix_eeconfig, sizeof(last_sent_led_matrix));
+                *begin_write_led_matrix() = last_sent_led_matrix;
+                end_write_led_matrix();
+            }
+        }
+    } else if (is_serial_link_connected()) {
+        bool *new_led_suspend_state = read_led_suspend_state();
+        if (new_led_suspend_state) {
+            led_matrix_set_suspend_state(*new_led_suspend_state);
+        }
+        if (!led_matrix_get_suspend_state()) {
+            led_eeconfig_t *new_led_matrix = read_led_matrix();
+            if (new_led_matrix) {
+                memcpy((void *)&led_matrix_eeconfig, (void *)new_led_matrix, sizeof(last_sent_led_matrix));
+            }
+        }
+    }
+#endif
 
 #ifdef WPM_ENABLE
     if (is_serial_link_master()) {
@@ -147,12 +208,13 @@ void matrix_scan_kb(void) {
             last_sent_wpm = current_wpm;
         }
     } else if (is_serial_link_connected()) {
-        uint8_t* new_wpm = read_current_wpm();
+        uint8_t *new_wpm = read_current_wpm();
         if (new_wpm) {
             set_current_wpm(*new_wpm);
         }
     }
 #endif
+
     matrix_scan_user();
 }
 
@@ -214,6 +276,22 @@ __attribute__ ((weak))
 void ergodox_right_led_3_set(uint8_t n) {
 }
 
+void suspend_power_down_kb(void) {
+#ifdef LED_MATRIX_ENABLE
+    led_matrix_set_suspend_state(true);
+    send_led_suspend_state();
+#endif
+    suspend_power_down_user();
+}
+
+void suspend_wakeup_init_kb(void) {
+#ifdef LED_MATRIX_ENABLE
+    led_matrix_set_suspend_state(false);
+    send_led_suspend_state();
+#endif
+    suspend_wakeup_init_user();
+}
+
 #ifdef SWAP_HANDS_ENABLE
 __attribute__ ((weak))
 const keypos_t hand_swap_config[MATRIX_ROWS][MATRIX_COLS] = {
@@ -235,5 +313,127 @@ const keypos_t hand_swap_config[MATRIX_ROWS][MATRIX_COLS] = {
     {{0, 6}, {1, 6}, {2, 6}, {3, 6}, {4, 6}},
     {{0, 7}, {1, 7}, {2, 7}, {3, 7}, {4, 7}},
     {{0, 8}, {1, 8}, {2, 8}, {3, 8}, {4, 8}},
+};
+#endif
+
+#ifdef LED_MATRIX_ENABLE
+#    include "is31fl3731-simple.h"
+
+void IS31FL3731_init_SDB(uint8_t addr) {
+    if (addr == LED_DRIVER_ADDR_1) {
+        // Turn on LED controller
+        palSetPadMode(GPIOB, 16, PAL_MODE_OUTPUT_PUSHPULL);
+        palSetPad(GPIOB, 16);
+    }
+}
+
+const is31_led g_is31_leds[DRIVER_LED_TOTAL] = {
+// The numbers in the comments are the led numbers DXX on the PCB
+/* Refer to IS31 manual for these locations
+ *  driver
+ *  |   LED address
+ *  |   | */
+// Left half
+//      45           44           43           42           41           40           39
+   { 0, C2_2 }, { 0, C1_2 }, { 0, C5_1 }, { 0, C4_1 }, { 0, C3_1 }, { 0, C2_1 }, { 0, C1_1 },
+//      52           51           50           49           48           47           46
+   { 0, C4_3 }, { 0, C3_3 }, { 0, C2_3 }, { 0, C1_3 }, { 0, C5_2 }, { 0, C4_2 }, { 0, C3_2 },
+//      58           57           56           55           54           53
+   { 0, C5_4 }, { 0, C4_4 }, { 0, C3_4 }, { 0, C2_4 }, { 0, C1_4 }, { 0, C5_3 },
+//      67           66           65           64           63           62           61
+   { 0, C4_6 }, { 0, C3_6 }, { 0, C2_6 }, { 0, C1_6 }, { 0, C5_5 }, { 0, C4_5 }, { 0, C3_5 },
+//      76           75           74           73           72
+   { 0, C4_8 }, { 0, C3_8 }, { 0, C2_8 }, { 0, C1_8 }, { 0, C4_7 },
+//                                                                                    60           59
+                                                                                 { 0, C2_5 }, { 0, C1_5 },
+//                                                                                                 68
+                                                                                              { 0, C5_6 },
+//                                                                       71           70           69
+                                                                    { 0, C3_7 }, { 0, C2_7 }, { 0, C1_7 },
+// Right half (mirrored)
+// Due to how LED_MATRIX_SPLIT is implemented, only the first half of g_is31_leds is actually used.
+// Luckily, the right half has the same LED pinouts, just mirrored.
+//      45           44           43           42           41           40           39
+   { 0, C2_2 }, { 0, C1_2 }, { 0, C5_1 }, { 0, C4_1 }, { 0, C3_1 }, { 0, C2_1 }, { 0, C1_1 },
+//      52           51           50           49           48           47           46
+   { 0, C4_3 }, { 0, C3_3 }, { 0, C2_3 }, { 0, C1_3 }, { 0, C5_2 }, { 0, C4_2 }, { 0, C3_2 },
+//      58           57           56           55           54           53
+   { 0, C5_4 }, { 0, C4_4 }, { 0, C3_4 }, { 0, C2_4 }, { 0, C1_4 }, { 0, C5_3 },
+//      67           66           65           64           63           62           61
+   { 0, C4_6 }, { 0, C3_6 }, { 0, C2_6 }, { 0, C1_6 }, { 0, C5_5 }, { 0, C4_5 }, { 0, C3_5 },
+//      76           75           74           73           72
+   { 0, C4_8 }, { 0, C3_8 }, { 0, C2_8 }, { 0, C1_8 }, { 0, C4_7 },
+//                                                                                    60           59
+                                                                                 { 0, C2_5 }, { 0, C1_5 },
+//                                                                                                 68
+                                                                                              { 0, C5_6 },
+//                                                                       71           70           69
+                                                                    { 0, C3_7 }, { 0, C2_7 }, { 0, C1_7 },
+};
+
+led_config_t g_led_config = {
+    {
+        // Key Matrix to LED Index
+        // Left half
+        { NO_LED, NO_LED, NO_LED,     33,     34 },
+        { NO_LED, NO_LED, NO_LED,     32,     37 },
+        {      6,     13, NO_LED,     26,     36 },
+        {      5,     12,     19,     25,     35 },
+        {      4,     11,     18,     24,     31 },
+        {      3,     10,     17,     23,     30 },
+        {      2,      9,     16,     22,     29 },
+        {      1,      8,     15,     21,     28 },
+        {      0,      7,     14,     20,     27 },
+        // Right half
+        { NO_LED, NO_LED, NO_LED,     71,     72 },
+        { NO_LED, NO_LED, NO_LED,     70,     75 },
+        {     44,     51, NO_LED,     64,     74 },
+        {     43,     50,     57,     63,     73 },
+        {     42,     49,     56,     62,     69 },
+        {     41,     48,     55,     61,     68 },
+        {     40,     47,     54,     60,     67 },
+        {     39,     46,     53,     59,     66 },
+        {     38,     45,     52,     58,     65 },
+    }, {
+        // LED Index to Physical Position (assumes a reasonable gap between halves)
+	// Left half
+        {   0,  3 }, {  15,  3 }, {  27,  1 }, {  39,  0 }, {  51,  1 }, {  63,  2 }, {  75,  2 },
+        {   0, 13 }, {  15, 13 }, {  27, 11 }, {  39, 10 }, {  51, 11 }, {  63, 12 }, {  78, 17 },
+        {   0, 23 }, {  15, 23 }, {  27, 21 }, {  39, 20 }, {  51, 21 }, {  63, 22 },
+        {   0, 33 }, {  15, 33 }, {  27, 31 }, {  39, 30 }, {  51, 31 }, {  63, 32 }, {  78, 32 },
+        {   4, 43 }, {  15, 43 }, {  27, 41 }, {  39, 40 }, {  51, 41 },
+                                                                                      {  89, 41 }, { 100, 46 },
+                                                                                                   {  95, 55 },
+                                                                         {  72, 54 }, {  83, 59 }, {  90, 64 },
+        // Right half (mirrored)
+        { 224,  3 }, { 209,  3 }, { 197,  1 }, { 185,  0 }, { 173,  1 }, { 161,  2 }, { 149,  2 },
+        { 224, 13 }, { 209, 13 }, { 197, 11 }, { 185, 10 }, { 173, 11 }, { 161, 12 }, { 146, 17 },
+        { 224, 23 }, { 209, 23 }, { 197, 21 }, { 185, 20 }, { 173, 21 }, { 161, 22 },
+        { 224, 33 }, { 209, 33 }, { 197, 31 }, { 185, 30 }, { 173, 31 }, { 161, 32 }, { 146, 32 },
+        { 220, 43 }, { 209, 43 }, { 197, 41 }, { 185, 40 }, { 173, 41 },
+                                                                                      { 135, 41 }, { 124, 46 },
+                                                                                                   { 129, 55 },
+                                                                         { 152, 54 }, { 141, 59 }, { 134, 64 },
+    }, {
+        // LED Index to Flag
+        // Left half
+        1, 4, 4, 4, 4, 4, 1,
+        1, 4, 4, 4, 4, 4, 1,
+        1, 4, 4, 4, 4, 4,
+        1, 4, 4, 4, 4, 4, 1,
+        1, 1, 1, 1, 1,
+                          1, 1,
+                             1,
+                       1, 1, 1,
+        // Right half (mirrored)
+        1, 4, 4, 4, 4, 4, 1,
+        1, 4, 4, 4, 4, 4, 1,
+        1, 4, 4, 4, 4, 4,
+        1, 4, 4, 4, 4, 4, 1,
+        1, 1, 1, 1, 1,
+                          1, 1,
+                             1,
+                       1, 1, 1,
+    }
 };
 #endif
