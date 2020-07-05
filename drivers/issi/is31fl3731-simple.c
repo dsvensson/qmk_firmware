@@ -133,11 +133,17 @@ void IS31FL3731_write_pwm_buffer(uint8_t addr, uint8_t *pwm_buffer) {
     }
 }
 
+// In case SDB pin needs to be pulled high, override this.
+__attribute__((weak)) void IS31FL3731_init_SDB(uint8_t addr) { }
+
 void IS31FL3731_init(uint8_t addr) {
     // In order to avoid the LEDs being driven with garbage data
     // in the LED driver's PWM registers, first enable software shutdown,
     // then set up the mode and other settings, clear the PWM registers,
     // then disable software shutdown.
+
+    // disable hardware shutdown, if any
+    IS31FL3731_init_SDB(addr);
 
     // select "function register" bank
     IS31FL3731_write_register(addr, ISSI_COMMANDREGISTER, ISSI_BANK_FUNCTIONREG);
