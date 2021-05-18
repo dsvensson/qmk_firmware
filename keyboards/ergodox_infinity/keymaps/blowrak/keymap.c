@@ -44,9 +44,10 @@
 #define IDE_BLD  LCTL(KC_F9)
 #define IDE_RBLD LSA(KC_M)
 
-#define BASE  0 // default layer
-#define SYMB  1 // symbols
-#define MEDIA 2 // media keys
+#define BASE   0 // default layer
+#define SYMB   1 // symbols
+#define MEDIA  2 // media keys
+#define QWERTY 3 // qwerty layout
 
 enum emoji_codes {
     M_SHRUG = SAFE_RANGE,
@@ -54,11 +55,14 @@ enum emoji_codes {
     M_WHY,
 };
 
+#define IDLE_TIMEOUT 30000 // 30 seconds
+static uint32_t idle_timer = 0;
+
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 /* Keymap 0: Basic layer
  *
  * ,--------------------------------------------------.           ,--------------------------------------------------.
- * | Esc    |   1  |   2  |   3  |   4  |   5  |      |           |      |   6  |   7  |   8  |   9  |   0  |   +    |
+ * | Esc    |   1  |   2  |   3  |   4  |   5  |      |           |QWERTY|   6  |   7  |   8  |   9  |   0  |   +    |
  * |--------+------+------+------+------+-------------|           |------+------+------+------+------+------+--------|
  * | Tab    |   Å  |   Ä  |   Ö  |   P  |   Y  | Re-  |           | Run  |   F  |   G  |   C  |   R  |   L  |   ,    |
  * |--------+------+------+------+------+------| Build|           |      |------+------+------+------+------+--------|
@@ -76,10 +80,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
  *                                 |      |ace   | End  |       | PgDn |  Ctrl  |      |
  *                                 `--------------------'       `----------------------'
  */
-// If it accepts an argument (i.e, is a function), it doesn't need KC_.
-// Otherwise, it needs KC_
-[BASE] = LAYOUT_ergodox(  // layer 0 : default
-        // left hand
+[BASE] = LAYOUT_ergodox(
         KC_ESC   , KC_1   , KC_2   , KC_3   , KC_4   , KC_5   , _______ ,
         KC_TAB   , SE_AO  , SE_AE  , SE_OE  , KC_P   , KC_Y   , IDE_RBLD,
         KC_LCTRL , KC_A   , KC_O   , KC_E   , KC_U   , KC_I   ,
@@ -88,15 +89,15 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
                                                        KC_INS , KC_DEL  ,
                                                                 KC_HOME ,
                                               KC_SPC , KC_BSPC, KC_END  ,
-        // right hand
-        _______, KC_6   , KC_7    , KC_8   , KC_9   , KC_0  , SE_PLUS        ,
-        IDE_RUN, KC_F   , KC_G    , KC_C   , KC_R   , KC_L  , KC_COMM        ,
-                 KC_H   , KC_D    , KC_T   , KC_N   , KC_S  , RALT_T(SE_MINS),
-        IDE_BLD, KC_X   , KC_M    , KC_W   , KC_V   , KC_Z  , KC_RSFT        ,
-                          MO(SYMB), KC_LEFT, KC_DOWN, KC_UP , KC_RIGHT       ,
-        KC_MPRV, KC_MNXT,
-        KC_PGUP,
-        KC_PGDN, CTL_T(KC_TAB), KC_ENT
+
+        TG(QWERTY), KC_6   , KC_7    , KC_8   , KC_9   , KC_0  , SE_PLUS        ,
+        IDE_RUN   , KC_F   , KC_G    , KC_C   , KC_R   , KC_L  , KC_COMM        ,
+                    KC_H   , KC_D    , KC_T   , KC_N   , KC_S  , RALT_T(SE_MINS),
+        IDE_BLD   , KC_X   , KC_M    , KC_W   , KC_V   , KC_Z  , KC_RSFT        ,
+                             MO(SYMB), KC_LEFT, KC_DOWN, KC_UP , KC_RIGHT       ,
+        KC_MPRV   , KC_MNXT,
+        KC_PGUP   ,
+        KC_PGDN   , CTL_T(KC_TAB), KC_ENT
     ),
 
 /* Keymap 1: Symbol Layer
@@ -120,9 +121,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
  *                                 |      |      |   Why|       |      |      |      |
  *                                 `--------------------'       `--------------------'
  */
-// SYMBOLS
 [SYMB] = LAYOUT_ergodox(
-       // left hand
        _______, AKC_1  , AKC_2  , AKC_3  , AKC_4  , AKC_5  , _______,
        _______, SE_LCBR, SE_PIPE, SE_RCBR, _______, _______, _______,
        _______, SE_LBRC, SE_BSLS, SE_RBRC, SE_QUOT, _______,
@@ -131,7 +130,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
                                            _______, M_TFLIP,
                                                     M_SHRUG,
                                   _______, _______, M_WHY  ,
-       // right hand
+
        _______, AKC_6  , AKC_7  , AKC_8  , AKC_9  , AKC_0  , _______,
        _______, _______, _______, _______, _______, _______, A_TILDE,
                 _______, _______, _______, _______, _______, _______,
@@ -141,7 +140,8 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
        _______,
        _______, _______, _______
 ),
-/* Keymap 1: Media Layer?
+
+/* Keymap 2: Media Layer
  *
  * ,--------------------------------------------------.           ,--------------------------------------------------.
  * |        |  F1  |  F2  |  F3  |  F4  |  F5  |      |           |      |  F6  |  F7  |  F8  |  F9  | F10  |  F11   |
@@ -157,22 +157,21 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
  *                                        ,-------------.       ,-------------.
  *                                        |BlStep|Pl/Pa |       |      |      |
  *                                 ,------|------|------|       |------+------+------.
- *                                 |      |      | Bri+ |       | Vol+ |      |      |
+ *                                 |      |      | Bl+  |       | Vol+ |      |      |
  *                                 |      |      |------|       |------|      |      |
- *                                 |      |      | Bri- |       | Vol- |      |      |
+ *                                 |      |      | Bl-  |       | Vol- |      |      |
  *                                 `--------------------'       `--------------------'
  */
 [MEDIA] = LAYOUT_ergodox(
-       // left hand
        _______, KC_F1  , KC_F2  , KC_F3  , KC_F4  , KC_F5  , _______,
        _______, _______, _______, _______, _______, _______, _______,
        _______, _______, _______, _______, _______, _______,
        _______, _______, _______, _______, _______, _______, _______,
        _______, _______, _______, _______, _______,
                                            BL_STEP, KC_MPLY,
-                                                    KC_BRIU,
-                                  _______, _______, KC_BRID,
-       // right hand
+                                                    BL_INC ,
+                                  _______, _______, BL_DEC ,
+
        _______, KC_F6  , KC_F7  , KC_F8  , KC_F9  , KC_F10 , KC_F11 ,
        _______, _______, _______, _______, _______, _______, KC_F12 ,
                 _______, _______, _______, _______, _______, _______,
@@ -183,12 +182,59 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
        KC_VOLD, _______, _______
 ),
 
+/* Keymap 3: Qwerty layer
+ *
+ * ,--------------------------------------------------.           ,--------------------------------------------------.
+ * | Esc    |   1  |   2  |   3  |   4  |   5  |      |           |      |   6  |   7  |   8  |   9  |   0  |   +    |
+ * |--------+------+------+------+------+-------------|           |------+------+------+------+------+------+--------|
+ * | Tab    |   Q  |   W  |   E  |   R  |   T  |      |           |      |   Y  |   U  |   I  |   O  |   P  |   Å    |
+ * |--------+------+------+------+------+------|      |           |      |------+------+------+------+------+--------|
+ * | LCtrl  |   A  |   S  |   D  |   F  |   G  |------|           |------|   H  |   J  |   K  |   L  |   Ö  |   Ä    |
+ * |--------+------+------+------+------+------|      |           |      |------+------+------+------+------+--------|
+ * | LShift |   Z  |   X  |   C  |   V  |   B  |      |           |      |   N  |   M  |   ,  |   .  |   -  | RShift |
+ * `--------+------+------+------+------+-------------'           `-------------+------+------+------+------+--------'
+ *  | Media |      |      | LAlt | LGui |                                       | Symb | Left | Down |  Up  | Right |
+ *  `-----------------------------------'                                       `-----------------------------------'
+ *                                        ,-------------.       ,-------------.
+ *                                        | Insrt| Del  |       | MPrv | MNxt |
+ *                                 ,------|------|------|       |------+--------+------.
+ *                                 |      |      | Home |       | PgUp |        |      |
+ *                                 | Space|Backsp|------|       |------|  Tab   |Enter |
+ *                                 |      |ace   | End  |       | PgDn |  Ctrl  |      |
+ *                                 `--------------------'       `----------------------'
+ */
+[QWERTY] = LAYOUT_ergodox(
+        _______, _______, KC_2   , KC_3   , KC_4   , KC_5   , _______,
+        _______, KC_Q   , KC_W   , KC_E   , KC_R   , KC_T   , _______,
+        _______, KC_A   , KC_S   , KC_D   , KC_F   , KC_G   ,
+        _______, KC_Z   , KC_X   , KC_C   , KC_V   , KC_B   , _______,
+        _______, _______, _______, _______, _______,
+                                                     _______, _______,
+                                                              _______,
+                                           _______ , _______, _______,
+
+        _______, _______, _______, _______, _______, _______, _______,
+        _______, KC_Y   , KC_U   , KC_I   , KC_O   , KC_P   , SE_AO  ,
+                 KC_H   , KC_J   , KC_K   , KC_L   , SE_OE  , SE_AE  ,
+        _______, KC_N   , KC_M   , KC_COMM, KC_DOT , SE_MINS, _______,
+                          _______, _______, _______, _______, _______,
+        _______, _______,
+        _______,
+        _______, _______, _______
+    ),
+
 };
 
 const uint16_t PROGMEM fn_actions[] = {
 };
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    idle_timer = timer_read32();
+
+    if (led_matrix_get_mode() != LED_MATRIX_SOLID) {
+        led_matrix_mode_noeeprom(LED_MATRIX_SOLID);
+    }
+
     switch (keycode) {
     case M_SHRUG:
         if (record->event.pressed) {
@@ -230,6 +276,9 @@ void matrix_init_user(void) {
 
 // Runs constantly in the background, in a loop.
 void matrix_scan_user(void) {
+    if (timer_elapsed32(idle_timer) > IDLE_TIMEOUT && led_matrix_get_mode() != LED_MATRIX_BREATHING) {
+        led_matrix_mode_noeeprom(LED_MATRIX_BREATHING);
+    }
 
     uint8_t layer = biton32(layer_state);
 
@@ -245,8 +294,6 @@ void matrix_scan_user(void) {
         ergodox_right_led_2_on();
         break;
     default:
-        // none
         break;
     }
-
 };
